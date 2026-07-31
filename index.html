@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ポスティング報告（フリーハンド版）</title>
+  <title>ポスティング報告（奈良市版）</title>
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
@@ -35,7 +35,7 @@
     <form id="report-form">
       <div class="form-group">
         <label>担当者名</label>
-        <input type="text" id="staff-name" placeholder="例: 山田 太郎" required>
+        <input type="text" id="staff-name" placeholder="例: 奈良 太郎" required>
       </div>
       <div class="form-group">
         <label>日付</label>
@@ -55,10 +55,10 @@
   <script src="https://unpkg.com/leaflet-freehandshapes@0.3.4/dist/leaflet-freehandshapes.min.js"></script>
 
   <script>
-    // 1. 地図初期化
+    // 1. 地図初期化：位置を「奈良県奈良市（緯度 34.6851, 経度 135.8048）」に固定
     const map = L.map('map', {
       touchZoom: false // 描画時の誤作動防止
-    }).setView([35.681236, 139.767125], 15);
+    }).setView([34.6851, 135.8048], 15);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap'
@@ -108,8 +108,9 @@
       const date = document.getElementById('report-date').value;
       const count = document.getElementById('sheet-count').value;
 
-      // メール送信
-      const mailTo = 'daibe75@gmail.com';
+      // ★★★ ここにご自身（受信用）のメールアドレスを入力してください ★★★
+      const mailTo = 'daibe75@gmail.com'; 
+
       const subject = encodeURIComponent(`【ポスティング報告】${date} ${name}様`);
       const body = encodeURIComponent(
         `ポスティング報告が届きました。\n\n` +
@@ -117,7 +118,7 @@
         `■ 担当者名: ${name}\n` +
         `■ 実施日付: ${date}\n` +
         `■ 配布枚数: ${count}枚\n` +
-        `■ エリア記録: フリーハンド描画完了\n` +
+        `■ 実施エリア: 奈良市内（描画完了）\n` +
         `--------------------`
       );
 
