@@ -3,24 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ポスティング報告</title>
-  <!-- Leaflet (地図ライブラリ) & Geoman (描画機能) -->
+  <title>ポスティング報告（フリーハンド版）</title>
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@latest/dist/leaflet-geoman.css" />
   <style>
     body { margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
     #map { flex: 1; width: 100%; min-height: 50vh; }
+    #controls { padding: 10px; background: #eee; text-align: center; border-bottom: 1px solid #ccc; }
     #form-container { padding: 15px; background: #f8f9fa; border-top: 1px solid #ccc; }
     .form-group { margin-bottom: 10px; }
     label { display: block; font-size: 12px; color: #666; margin-bottom: 3px; }
     input { width: 100%; padding: 10px; box-sizing: border-box; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
     button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
-    button:active { background: #0056b3; }
+    .btn-secondary { background: #6c757d; margin-bottom: 8px; }
+    button:active { opacity: 0.8; }
   </style>
 </head>
 <body>
 
-  <!-- 地図表示エリア -->
+  <!-- フリーハンド操作ボタン -->
+  <div id="controls">
+    <button type="button" id="toggle-draw" class="btn-secondary">✏️ フリーハンドで範囲を描く (OFF)</button>
+    <button type="button" id="clear-map" class="btn-secondary" style="background:#dc3545;">🗑 描いた範囲を消す</button>
+  </div>
+
+  <!-- 地図エリア -->
   <div id="map"></div>
 
   <!-- 報告フォーム -->
@@ -42,36 +49,58 @@
     </form>
   </div>
 
+  <!-- JSライブラリ -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@latest/dist/leaflet-geoman.js"></script>
+  <!-- フリーハンド描画ライブラリ -->
+  <script src="https://unpkg.com/leaflet-freehandshapes@0.3.4/dist/leaflet-freehandshapes.min.js"></script>
+
   <script>
-    // 1. 地図の初期化 (デフォルト位置: 東京 ※GPSが使えれば現在地に移動可能)
-    const map = L.map('map').setView([35.681236, 139.767125], 15);
+    // 1. 地図初期化
+    const map = L.map('map', {
+      touchZoom: false // 描画時の誤作動防止
+    }).setView([35.681236, 139.767125], 15);
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
+      attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // 2. 地図に図形を描くモード（ポリゴン・ペン）を追加
-    map.pm.addControls({
-      position: 'topleft',
-      drawPolygon: true,
-      drawPolyline: true,
-      editMode: false,
-      dragMode: false,
-      cutPolygon: false,
-      removalMode: true
-    });
-
-    // 今日の日付を初期セット
+    // 今日を初期セット
     document.getElementById('report-date').valueAsDate = new Date();
 
-    // 描画されたエリアのデータを管理
-    let drawnLayers = [];
-    map.on('pm:create', (e) => {
-      drawnLayers.push(e.layer);
+    // 2. フリーハンド機能の初期化
+    const drawer = new L.FreeHandShapes({
+      polygon: {
+        color: '#007bff',
+        fillColor: '#007bff',
+        fillOpacity: 0.4,
+        weight: 3
+      }
+    });
+    map.addLayer(drawer);
+
+    // 描画モードの切り替え
+    let isDrawing = false;
+    const toggleBtn = document.getElementById('toggle-draw');
+
+    toggleBtn.addEventListener('click', () => {
+      isDrawing = !isDrawing;
+      if (isDrawing) {
+        drawer.enable();
+        toggleBtn.innerText = '🔴 フリーハンド描画中（指でなぞる）';
+        toggleBtn.style.background = '#28a745';
+      } else {
+        drawer.disable();
+        toggleBtn.innerText = '✏️ フリーハンドで範囲を描く (OFF)';
+        toggleBtn.style.background = '#6c757d';
+      }
     });
 
-    // 3. フォーム送信処理
+    // 地図クリアボタン
+    document.getElementById('clear-map').addEventListener('click', () => {
+      drawer.clearLayers();
+    });
+
+    // 3. 送信処理
     document.getElementById('report-form').addEventListener('submit', function(e) {
       e.preventDefault();
 
@@ -79,14 +108,8 @@
       const date = document.getElementById('report-date').value;
       const count = document.getElementById('sheet-count').value;
 
-      // エリアが描画されているかチェック
-      if (drawnLayers.length === 0) {
-        alert('地図上にポスティング実施範囲を描き込んでください。');
-        return;
-      }
-
-      // メール本文の組み立て
-      const mailTo = 'reporting@example.com'; // ★送信先アドレスを設定
+      // メール送信
+      const mailTo = 'daibe75@gmail.com';
       const subject = encodeURIComponent(`【ポスティング報告】${date} ${name}様`);
       const body = encodeURIComponent(
         `ポスティング報告が届きました。\n\n` +
@@ -94,23 +117,19 @@
         `■ 担当者名: ${name}\n` +
         `■ 実施日付: ${date}\n` +
         `■ 配布枚数: ${count}枚\n` +
-        `■ 実施エリア: 地図上に描画完了 (${drawnLayers.length}箇所)\n` +
+        `■ エリア記録: フリーハンド描画完了\n` +
         `--------------------`
       );
 
-      // スマホの標準メールアプリを起動
       window.location.href = `mailto:${mailTo}?subject=${subject}&body=${body}`;
 
-      // 4. 画面のリセット
+      // 自動リセット
       setTimeout(() => {
-        if (confirm('報告メールを起動しました。入力内容と地図描画をリセットしますか？')) {
-          // フォーム初期化
+        if (confirm('メールを起動しました。入力欄と地図上のフリーハンド範囲をリセットしますか？')) {
           document.getElementById('report-form').reset();
           document.getElementById('report-date').valueAsDate = new Date();
-
-          // 地図上の描画をクリア
-          drawnLayers.forEach(layer => map.removeLayer(layer));
-          drawnLayers = [];
+          drawer.clearLayers(); // フリーハンド描画をクリア
+          if (isDrawing) toggleBtn.click(); // 描画モード解除
         }
       }, 1000);
     });
