@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body { margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
-    #map { flex: 1; width: 100%; min-height: 50vh; background: #f8f9fa; }
+    #map { flex: 1; width: 100%; min-height: 45vh; background: #e0e0e0; }
     #controls { padding: 8px; background: #f1f3f5; text-align: center; display: flex; gap: 8px; justify-content: center; }
     .btn { flex: 1; padding: 12px; font-size: 14px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; color: white; }
     .btn-draw { background: #0d6efd; }
@@ -19,7 +19,10 @@
     label { display: block; font-size: 12px; color: #666; margin-bottom: 3px; }
     input { width: 100%; padding: 10px; box-sizing: border-box; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
     button.submit-btn { width: 100%; padding: 14px; background: #198754; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 5px; }
-    button:active { opacity: 0.8; }
+    
+    /* 生成された画像表示エリア */
+    #captured-image-container { display: none; padding: 15px; background: #e9ecef; text-align: center; border-top: 2px dashed #0d6efd; }
+    #captured-image-container img { max-width: 100%; border: 1px solid #ccc; margin-top: 8px; border-radius: 6px; }
   </style>
 </head>
 <body>
@@ -48,26 +51,34 @@
         <label>配布枚数</label>
         <input type="number" id="sheet-count" placeholder="例: 500" required>
       </div>
-      <button type="submit" class="submit-btn">メールを起動して報告</button>
+      <button type="submit" class="submit-btn">地図画像を作成してメール起動</button>
     </form>
+  </div>
+
+  <!-- 生成画像表示エリア -->
+  <div id="captured-image-container">
+    <p style="font-size:13px; font-weight:bold; color:#d9534f; margin:0;">
+      📸 下の画像を「長押し」して保存またはコピーし、メールに添付してください！
+    </p>
+    <img id="captured-img" src="" alt="地図画像">
   </div>
 
   <!-- JSライブラリ -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- 画面キャプチャ用ライブラリ (html2canvas) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
   <script>
-    // 1. 地図初期化（奈良市固定: 緯度 34.6851, 経度 135.8048）
+    // 1. 地図初期化（白画面化を防ぐためcrossOrigin指定を外し標準読み込みに）
     const map = L.map('map', { tap: true }).setView([34.6851, 135.8048], 15);
 
-    // 軽量で安定したOpenStreetMap標準の地図タイル
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // 今日を初期セット
     document.getElementById('report-date').valueAsDate = new Date();
 
-    // 2. スマホに最適化したタップ描画処理
+    // 2. タップ描画処理
     let isDrawing = false;
     let clickPoints = [];
     let currentPolygon = null;
@@ -76,7 +87,6 @@
     const toggleBtn = document.getElementById('toggle-draw');
     const clearBtn = document.getElementById('clear-map');
 
-    // 描画モード切替
     toggleBtn.addEventListener('click', () => {
       isDrawing = !isDrawing;
       if (isDrawing) {
@@ -88,14 +98,12 @@
       }
     });
 
-    // 地図タップ時のピン設置＆範囲塗りつぶし
     map.on('click', (e) => {
       if (!isDrawing) return;
-
       const latlng = e.latlng;
       clickPoints.push([latlng.lat, latlng.lng]);
 
-      const marker = L.circleMarker(latlng, { radius: 6, color: '#dc3545', fillColor: '#dc3545', fillOpacity: 1 }).addTo(map);
+      const marker = L.circleMarker(latlng, { radius: 5, color: '#dc3545', fillColor: '#dc3545', fillOpacity: 1 }).addTo(map);
       markers.push(marker);
 
       if (clickPoints.length >= 2) {
@@ -104,7 +112,6 @@
       }
     });
 
-    // クリア処理
     clearBtn.addEventListener('click', resetMapData);
 
     function resetMapData() {
@@ -114,9 +121,10 @@
       markers = [];
       currentPolygon = null;
       if (isDrawing) toggleBtn.click();
+      document.getElementById('captured-image-container').style.display = 'none';
     }
 
-    // 3. メール起動処理
+    // 3. メール送信 ＆ 画像生成処理
     document.getElementById('report-form').addEventListener('submit', function(e) {
       e.preventDefault();
 
@@ -128,9 +136,9 @@
       const name = document.getElementById('staff-name').value;
       const date = document.getElementById('report-date').value;
       const count = document.getElementById('sheet-count').value;
-
-      // ★★★ あなたの受信用メールアドレスに書き換えてください ★★★
-      const mailTo = 'daibe75@gmail.com';
+      
+      // ★★★ アドレスを設定してください ★★★
+      const mailTo = 'daibe75@gmail.com'; 
 
       const subject = encodeURIComponent(`【ポスティング報告】${date} ${name}様`);
       const body = encodeURIComponent(
@@ -139,22 +147,39 @@
         `■ 担当者名: ${name}\n` +
         `■ 実施日付: ${date}\n` +
         `■ 配布枚数: ${count}枚\n` +
-        `■ 実施エリア: 奈良市内（スクショ添付）\n` +
+        `■ 実施エリア: 奈良市内（添付画像参照）\n` +
         `--------------------\n` +
-        `※撮影した地図のスクリーンショットを添付して送信してください。`
+        `※アプリで作成した地図画像を添付して送信してください。`
       );
 
-      // 標準メールアプリを起動
-      window.location.href = `mailto:${mailTo}?subject=${subject}&body=${body}`;
+      // メール起動用の共通処理
+      const launchMail = () => {
+        window.location.href = `mailto:${mailTo}?subject=${subject}&body=${body}`;
+        
+        // フォームと地図のリセット
+        setTimeout(() => {
+          if (confirm('メールアプリを起動しました。入力欄と地図上の描画をクリアしますか？')) {
+            document.getElementById('report-form').reset();
+            document.getElementById('report-date').valueAsDate = new Date();
+            resetMapData();
+          }
+        }, 1000);
+      };
 
-      // 画面のリセット
-      setTimeout(() => {
-        if (confirm('メールアプリを起動しました。入力欄と地図上の描画をクリアしますか？')) {
-          document.getElementById('report-form').reset();
-          document.getElementById('report-date').valueAsDate = new Date();
-          resetMapData();
-        }
-      }, 1000);
+      // 地図エリアを画像化
+      const mapElement = document.getElementById('map');
+      html2canvas(mapElement, { useCORS: false, allowTaint: true })
+        .then(canvas => {
+          const imgData = canvas.toDataURL('image/png');
+          const imgElement = document.getElementById('captured-img');
+          imgElement.src = imgData;
+          document.getElementById('captured-image-container').style.display = 'block';
+          launchMail();
+        })
+        .catch(err => {
+          // 画像キャプチャで失敗してもメールだけは確実に開く
+          launchMail();
+        });
     });
   </script>
 </body>
