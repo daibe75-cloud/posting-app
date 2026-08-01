@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ポスティング報告</title>
+  <title>ポスティング報告（Chatwork対応版）</title>
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
@@ -17,7 +17,7 @@
     #form-container { padding: 15px; background: #ffffff; border-top: 1px solid #ccc; }
     .form-group { margin-bottom: 10px; }
     label { display: block; font-size: 12px; color: #666; margin-bottom: 3px; }
-    /* 入力欄のサイズ統一（日付欄の見た目を他のテキスト・数字入力と揃える設定） */
+    
     input[type="text"], input[type="date"], input[type="number"] {
       width: 100%;
       height: 42px;
@@ -27,10 +27,46 @@
       border: 1px solid #ccc;
       border-radius: 4px;
       background-color: #fff;
-      -webkit-appearance: none; /* スマホ独自デザインの崩れを防止 */
+      -webkit-appearance: none;
     }
     button.submit-btn { width: 100%; padding: 14px; background: #198754; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 5px; }
     button:active { opacity: 0.8; }
+
+    /* 報告画面（モーダル表示） */
+    #report-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6);
+      z-index: 9999;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background: white;
+      width: 90%;
+      max-width: 400px;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      box-sizing: border-box;
+    }
+    .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #333; text-align: center; }
+    textarea {
+      width: 100%;
+      height: 160px;
+      padding: 10px;
+      box-sizing: border-box;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #f8f9fa;
+      resize: none;
+      font-family: monospace;
+    }
+    .modal-buttons { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+    .btn-copy { background: #0d6efd; color: white; padding: 12px; font-size: 15px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; }
+    .btn-close { background: #6c757d; color: white; padding: 10px; font-size: 14px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -55,24 +91,35 @@
         <label>日付</label>
         <input type="date" id="report-date" required>
       </div>
-      <!-- 追加：配布物の種類 -->
       <div class="form-group">
         <label>配布物の種類</label>
-        <input type="text" id="item-type" placeholder="例: 新装開店チラシA / クーポン券" required>
+        <input type="text" id="item-type" placeholder="例: 新装開店チラシA" required>
       </div>
       <div class="form-group">
         <label>配布枚数</label>
         <input type="number" id="sheet-count" placeholder="例: 500" required>
       </div>
-      <button type="submit" id="submit-btn" class="submit-btn">メールを起動して報告</button>
+      <button type="submit" id="submit-btn" class="submit-btn">Chatwork用テキストを生成</button>
     </form>
+  </div>
+
+  <!-- 報告テキスト生成画面 (モーダル) -->
+  <div id="report-modal">
+    <div class="modal-content">
+      <div class="modal-title">📝 Chatwork報告用テキスト</div>
+      <textarea id="report-text" readonly></textarea>
+      <div class="modal-buttons">
+        <button type="button" id="copy-btn" class="btn-copy">📋 テキストをコピー</button>
+        <button type="button" id="close-btn" class="btn-close">画面をクリアして元に戻る</button>
+      </div>
+    </div>
   </div>
 
   <!-- JSライブラリ -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    // 1. 地図初期化
+    // 1. 地図初期化（奈良市）
     const map = L.map('map', { tap: true }).setView([34.6851, 135.8048], 15);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -126,12 +173,12 @@
       if (isDrawing) toggleBtn.click();
     }
 
-    // 3. 住所自動取得 ＆ メール起動処理
+    // 3. 住所自動取得 ＆ Chatworkテキスト画面生成
     document.getElementById('report-form').addEventListener('submit', async function(e) {
       e.preventDefault();
 
       if (clickPoints.length < 3) {
-        alert('地図上を3箇所以上タップして、ポスティング範囲を囲んでください。');
+        alert('地図上を3箇所有上タップして、ポスティング範囲を囲んでください。');
         return;
       }
 
@@ -141,27 +188,18 @@
 
       const name = document.getElementById('staff-name').value;
       const date = document.getElementById('report-date').value;
-      const itemType = document.getElementById('item-type').value; // 配布物の種類
+      const itemType = document.getElementById('item-type').value;
       const count = document.getElementById('sheet-count').value;
 
-      // ★★★ アドレスを設定してください ★★★
-      const mailTo = 'daibe75@gmail.com'; 
-
-      // 描画されたエリアの中心座標を計算
+      // 住所自動取得
       const firstPoint = clickPoints[0];
-      const lat = firstPoint[0];
-      const lng = firstPoint[1];
-
-      // 逆ジオコーディング（座標から町名を自動取得）
-      let areaName = "奈良市内（詳細位置取得失敗）";
+      let areaName = "奈良市内";
       try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${firstPoint[0]}&lon=${firstPoint[1]}&zoom=18&addressdetails=1`, {
           headers: { 'Accept-Language': 'ja' }
         });
         const data = await response.json();
-        
         if (data && data.address) {
-          // 町名や地区名を取得
           const suburb = data.address.suburb || data.address.neighbourhood || data.address.quarter || data.address.city_district || "";
           const city = data.address.city || data.address.town || "";
           areaName = `${city}${suburb} 周辺`;
@@ -171,33 +209,44 @@
       }
 
       submitBtn.disabled = false;
-      submitBtn.innerText = 'メールを起動して報告';
+      submitBtn.innerText = 'Chatwork用テキストを生成';
 
-      // メール本文の組み立て
-      const subject = encodeURIComponent(`【ポスティング報告】${date} ${name}様`);
-      const body = encodeURIComponent(
-        `ポスティング報告が届きました。\n\n` +
-        `--------------------\n` +
-        `■ 担当者名: ${name}\n` +
-        `■ 実施日付: ${date}\n` +
-        `■ 配布物: ${itemType}\n` +
-        `■ 配布枚数: ${count}枚\n` +
-        `■ 代表エリア: ${areaName}\n` +
-        `--------------------\n` +
-        `※撮影した地図のスクリーンショットを添付して送信してください。`
-      );
+      // Chatworkで綺麗に見える装飾付き文面を作成
+      const chatworkText = 
+`[info][title]【ポスティング完了報告】[/title]` +
+`■ 担当者名：${name}\n` +
+`■ 実施日付：${date}\n` +
+`■ 配布物件：${itemType}\n` +
+`■ 配布枚数：${count}枚\n` +
+`■ 配布エリア：${areaName}\n` +
+`--------------------------------\n` +
+`※地図スクショを添付します。[/info]`;
 
-      // メールアプリ起動
-      window.location.href = `mailto:${mailTo}?subject=${subject}&body=${body}`;
+      // モーダル生成＆テキストセット
+      document.getElementById('report-text').value = chatworkText;
+      document.getElementById('report-modal').style.display = 'flex';
+    });
 
-      // リセット確認
-      setTimeout(() => {
-        if (confirm('メールアプリを起動しました。入力欄と地図上の描画をクリアしますか？')) {
-          document.getElementById('report-form').reset();
-          document.getElementById('report-date').valueAsDate = new Date();
-          resetMapData();
-        }
-      }, 1000);
+    // 4. コピーボタン処理
+    document.getElementById('copy-btn').addEventListener('click', function() {
+      const text = document.getElementById('report-text');
+      text.select();
+      text.setSelectionRange(0, 99999); // スマホ用全選択
+      navigator.clipboard.writeText(text.value).then(() => {
+        alert('Chatwork用の報告テキストをコピーしました！');
+      }).catch(() => {
+        // 万が一コピーAPIがブロックされた場合の代替
+        document.execCommand('copy');
+        alert('テキストをコピーしました！');
+      });
+    });
+
+    // 5. 画面をクリアして元に戻るボタン処理
+    document.getElementById('close-btn').addEventListener('click', function() {
+      document.getElementById('report-modal').style.display = 'none';
+      document.getElementById('report-form').reset();
+      document.getElementById('report-date').valueAsDate = new Date();
+      resetMapData();
     });
   </script>
 </body>
