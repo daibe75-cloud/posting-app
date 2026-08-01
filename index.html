@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body { margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
-    #map { flex: 1; width: 100%; min-height: 45vh; background: #e0e0e0; }
+    #map { flex: 1; width: 100%; min-height: 40vh; background: #e0e0e0; }
     #controls { padding: 8px; background: #f1f3f5; text-align: center; display: flex; gap: 8px; justify-content: center; }
     .btn { flex: 1; padding: 12px; font-size: 14px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; color: white; }
     .btn-draw { background: #0d6efd; }
@@ -17,12 +17,20 @@
     #form-container { padding: 15px; background: #ffffff; border-top: 1px solid #ccc; }
     .form-group { margin-bottom: 10px; }
     label { display: block; font-size: 12px; color: #666; margin-bottom: 3px; }
-    input { width: 100%; padding: 10px; box-sizing: border-box; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
+    /* 入力欄のサイズ統一（日付欄の見た目を他のテキスト・数字入力と揃える設定） */
+    input[type="text"], input[type="date"], input[type="number"] {
+      width: 100%;
+      height: 42px;
+      padding: 8px 10px;
+      box-sizing: border-box;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background-color: #fff;
+      -webkit-appearance: none; /* スマホ独自デザインの崩れを防止 */
+    }
     button.submit-btn { width: 100%; padding: 14px; background: #198754; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 5px; }
-    
-    /* 生成された画像表示エリア */
-    #captured-image-container { display: none; padding: 15px; background: #e9ecef; text-align: center; border-top: 2px dashed #0d6efd; }
-    #captured-image-container img { max-width: 100%; border: 1px solid #ccc; margin-top: 8px; border-radius: 6px; }
+    button:active { opacity: 0.8; }
   </style>
 </head>
 <body>
@@ -47,29 +55,24 @@
         <label>日付</label>
         <input type="date" id="report-date" required>
       </div>
+      <!-- 追加：配布物の種類 -->
+      <div class="form-group">
+        <label>配布物の種類</label>
+        <input type="text" id="item-type" placeholder="例: 新装開店チラシA / クーポン券" required>
+      </div>
       <div class="form-group">
         <label>配布枚数</label>
         <input type="number" id="sheet-count" placeholder="例: 500" required>
       </div>
-      <button type="submit" class="submit-btn">地図画像を作成してメール起動</button>
+      <button type="submit" id="submit-btn" class="submit-btn">メールを起動して報告</button>
     </form>
-  </div>
-
-  <!-- 生成画像表示エリア -->
-  <div id="captured-image-container">
-    <p style="font-size:13px; font-weight:bold; color:#d9534f; margin:0;">
-      📸 下の画像を「長押し」して保存またはコピーし、メールに添付してください！
-    </p>
-    <img id="captured-img" src="" alt="地図画像">
   </div>
 
   <!-- JSライブラリ -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- 画面キャプチャ用ライブラリ (html2canvas) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
   <script>
-    // 1. 地図初期化（白画面化を防ぐためcrossOrigin指定を外し標準読み込みに）
+    // 1. 地図初期化
     const map = L.map('map', { tap: true }).setView([34.6851, 135.8048], 15);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -121,11 +124,10 @@
       markers = [];
       currentPolygon = null;
       if (isDrawing) toggleBtn.click();
-      document.getElementById('captured-image-container').style.display = 'none';
     }
 
-    // 3. メール送信 ＆ 画像生成処理
-    document.getElementById('report-form').addEventListener('submit', function(e) {
+    // 3. 住所自動取得 ＆ メール起動処理
+    document.getElementById('report-form').addEventListener('submit', async function(e) {
       e.preventDefault();
 
       if (clickPoints.length < 3) {
@@ -133,53 +135,69 @@
         return;
       }
 
+      const submitBtn = document.getElementById('submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.innerText = '住所を取得中...';
+
       const name = document.getElementById('staff-name').value;
       const date = document.getElementById('report-date').value;
+      const itemType = document.getElementById('item-type').value; // 配布物の種類
       const count = document.getElementById('sheet-count').value;
-      
+
       // ★★★ アドレスを設定してください ★★★
       const mailTo = 'daibe75@gmail.com'; 
 
+      // 描画されたエリアの中心座標を計算
+      const firstPoint = clickPoints[0];
+      const lat = firstPoint[0];
+      const lng = firstPoint[1];
+
+      // 逆ジオコーディング（座標から町名を自動取得）
+      let areaName = "奈良市内（詳細位置取得失敗）";
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
+          headers: { 'Accept-Language': 'ja' }
+        });
+        const data = await response.json();
+        
+        if (data && data.address) {
+          // 町名や地区名を取得
+          const suburb = data.address.suburb || data.address.neighbourhood || data.address.quarter || data.address.city_district || "";
+          const city = data.address.city || data.address.town || "";
+          areaName = `${city}${suburb} 周辺`;
+        }
+      } catch (err) {
+        console.log("住所取得エラー:", err);
+      }
+
+      submitBtn.disabled = false;
+      submitBtn.innerText = 'メールを起動して報告';
+
+      // メール本文の組み立て
       const subject = encodeURIComponent(`【ポスティング報告】${date} ${name}様`);
       const body = encodeURIComponent(
         `ポスティング報告が届きました。\n\n` +
         `--------------------\n` +
         `■ 担当者名: ${name}\n` +
         `■ 実施日付: ${date}\n` +
+        `■ 配布物: ${itemType}\n` +
         `■ 配布枚数: ${count}枚\n` +
-        `■ 実施エリア: 奈良市内（添付画像参照）\n` +
+        `■ 代表エリア: ${areaName}\n` +
         `--------------------\n` +
-        `※アプリで作成した地図画像を添付して送信してください。`
+        `※撮影した地図のスクリーンショットを添付して送信してください。`
       );
 
-      // メール起動用の共通処理
-      const launchMail = () => {
-        window.location.href = `mailto:${mailTo}?subject=${subject}&body=${body}`;
-        
-        // フォームと地図のリセット
-        setTimeout(() => {
-          if (confirm('メールアプリを起動しました。入力欄と地図上の描画をクリアしますか？')) {
-            document.getElementById('report-form').reset();
-            document.getElementById('report-date').valueAsDate = new Date();
-            resetMapData();
-          }
-        }, 1000);
-      };
+      // メールアプリ起動
+      window.location.href = `mailto:${mailTo}?subject=${subject}&body=${body}`;
 
-      // 地図エリアを画像化
-      const mapElement = document.getElementById('map');
-      html2canvas(mapElement, { useCORS: false, allowTaint: true })
-        .then(canvas => {
-          const imgData = canvas.toDataURL('image/png');
-          const imgElement = document.getElementById('captured-img');
-          imgElement.src = imgData;
-          document.getElementById('captured-image-container').style.display = 'block';
-          launchMail();
-        })
-        .catch(err => {
-          // 画像キャプチャで失敗してもメールだけは確実に開く
-          launchMail();
-        });
+      // リセット確認
+      setTimeout(() => {
+        if (confirm('メールアプリを起動しました。入力欄と地図上の描画をクリアしますか？')) {
+          document.getElementById('report-form').reset();
+          document.getElementById('report-date').valueAsDate = new Date();
+          resetMapData();
+        }
+      }, 1000);
     });
   </script>
 </body>
