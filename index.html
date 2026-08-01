@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ポスティング報告（奈良市版）</title>
+  <title>ポスティング報告（Gmail対応版）</title>
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
@@ -14,8 +14,8 @@
     .form-group { margin-bottom: 10px; }
     label { display: block; font-size: 12px; color: #666; margin-bottom: 3px; }
     input { width: 100%; padding: 10px; box-sizing: border-box; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
-    button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
-    .btn-secondary { background: #6c757d; margin-bottom: 8px; }
+    button { width: 100%; padding: 12px; background: #ea4335; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
+    .btn-secondary { background: #6c757d; margin-bottom: 8px; color: white; border: none; padding: 8px 12px; border-radius: 4px; }
     button:active { opacity: 0.8; }
   </style>
 </head>
@@ -45,7 +45,7 @@
         <label>配布枚数</label>
         <input type="number" id="sheet-count" placeholder="例: 500" required>
       </div>
-      <button type="submit">メールを作成して報告</button>
+      <button type="submit">Gmailで報告メールを作成</button>
     </form>
   </div>
 
@@ -55,7 +55,7 @@
   <script src="https://unpkg.com/leaflet-freehandshapes@0.3.4/dist/leaflet-freehandshapes.min.js"></script>
 
   <script>
-    // 1. 地図初期化：位置を「奈良県奈良市（緯度 34.6851, 経度 135.8048）」に固定
+    // 1. 地図初期化（奈良市固定: 緯度 34.6851, 経度 135.8048）
     const map = L.map('map', {
       touchZoom: false // 描画時の誤作動防止
     }).setView([34.6851, 135.8048], 15);
@@ -70,8 +70,8 @@
     // 2. フリーハンド機能の初期化
     const drawer = new L.FreeHandShapes({
       polygon: {
-        color: '#007bff',
-        fillColor: '#007bff',
+        color: '#ea4335',
+        fillColor: '#ea4335',
         fillOpacity: 0.4,
         weight: 3
       }
@@ -100,7 +100,7 @@
       drawer.clearLayers();
     });
 
-    // 3. 送信処理
+    // 3. Gmail送信処理
     document.getElementById('report-form').addEventListener('submit', function(e) {
       e.preventDefault();
 
@@ -108,8 +108,8 @@
       const date = document.getElementById('report-date').value;
       const count = document.getElementById('sheet-count').value;
 
-      // ★★★ ここにご自身（受信用）のメールアドレスを入力してください ★★★
-      const mailTo = 'daibe75@gmail.com'; 
+      // ★★★ あなたのGmailアドレスを入力してください ★★★
+      const mailTo = 'daibe75@gmail.com';
 
       const subject = encodeURIComponent(`【ポスティング報告】${date} ${name}様`);
       const body = encodeURIComponent(
@@ -122,14 +122,18 @@
         `--------------------`
       );
 
-      window.location.href = `mailto:${mailTo}?subject=${subject}&body=${body}`;
+      // Web版Gmailの作成画面URLを自動生成
+      const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${mailTo}&su=${subject}&body=${body}`;
 
-      // 自動リセット
+      // 別タブ（新しいウィンドウ）でGmail作成画面を開く
+      window.open(gmailUrl, '_blank');
+
+      // 画面のリセット
       setTimeout(() => {
-        if (confirm('メールを起動しました。入力欄と地図上のフリーハンド範囲をリセットしますか？')) {
+        if (confirm('Gmail画面を開きました。アプリの入力欄と地図上の範囲をリセットしますか？')) {
           document.getElementById('report-form').reset();
           document.getElementById('report-date').valueAsDate = new Date();
-          drawer.clearLayers(); // フリーハンド描画をクリア
+          drawer.clearLayers(); // 描画を消す
           if (isDrawing) toggleBtn.click(); // 描画モード解除
         }
       }, 1000);
