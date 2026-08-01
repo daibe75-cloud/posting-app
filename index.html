@@ -3,28 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ポスティング報告（奈良市版）</title>
+  <title>ポスティング報告</title>
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <!-- Leaflet Draw CSS -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <style>
     body { margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
-    #map { flex: 1; width: 100%; min-height: 55vh; }
-    #form-container { padding: 15px; background: #f8f9fa; border-top: 1px solid #ccc; }
+    #map { flex: 1; width: 100%; min-height: 50vh; }
+    #controls { padding: 8px; background: #f1f3f5; text-align: center; border-bottom: 1px solid #ccc; display: flex; gap: 8px; justify-content: center; }
+    .btn { flex: 1; padding: 12px; font-size: 14px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; color: white; }
+    .btn-draw { background: #0d6efd; }
+    .btn-draw.active { background: #dc3545; }
+    .btn-clear { background: #6c757d; max-width: 100px; }
+    #form-container { padding: 15px; background: #ffffff; border-top: 1px solid #ccc; }
     .form-group { margin-bottom: 10px; }
     label { display: block; font-size: 12px; color: #666; margin-bottom: 3px; }
     input { width: 100%; padding: 10px; box-sizing: border-box; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
-    button.submit-btn { width: 100%; padding: 12px; background: #ea4335; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
-    button.submit-btn:active { opacity: 0.8; }
-    /* 地図上の操作ガイド */
-    .map-instruction { background: #fff3cd; color: #856404; padding: 8px; text-align: center; font-size: 13px; font-weight: bold; border-bottom: 1px solid #ffeeba; }
+    button.submit-btn { width: 100%; padding: 14px; background: #198754; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 5px; }
+    button:active { opacity: 0.8; }
   </style>
 </head>
 <body>
 
-  <div class="map-instruction">
-    📍 地図左上の「多角形」または「四角形」アイコンをタップして範囲を描いてください
+  <!-- ボタン操作エリア -->
+  <div id="controls">
+    <button type="button" id="toggle-draw" class="btn btn-draw">📍 範囲を描く (OFF)</button>
+    <button type="button" id="clear-map" class="btn btn-clear">🗑 クリア</button>
   </div>
 
   <!-- 地図エリア -->
@@ -45,18 +48,16 @@
         <label>配布枚数</label>
         <input type="number" id="sheet-count" placeholder="例: 500" required>
       </div>
-      <button type="submit" class="submit-btn">Gmailで報告メールを作成</button>
+      <button type="submit" class="submit-btn">メールを起動して報告</button>
     </form>
   </div>
 
   <!-- JSライブラリ -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Leaflet Draw JS -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 
   <script>
     // 1. 地図初期化（奈良市固定: 緯度 34.6851, 経度 135.8048）
-    const map = L.map('map').setView([34.6851, 135.8048], 15);
+    const map = L.map('map', { tap: true }).setView([34.6851, 135.8048], 15);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap'
@@ -65,43 +66,63 @@
     // 今日を初期セット
     document.getElementById('report-date').valueAsDate = new Date();
 
-    // 2. 描画機能の設定（Leaflet.Draw）
-    const drawnItems = new L.FeatureGroup();
-    map.addLayer(drawnItems);
+    // 2. スマホに最適化したタップ描画システム
+    let isDrawing = false;
+    let clickPoints = [];
+    let currentPolygon = null;
+    let markers = [];
 
-    const drawControl = new L.Control.Draw({
-      draw: {
-        polyline: false, // 線は無効
-        circle: false,   // 円は無効
-        circlemarker: false,
-        marker: false,
-        polygon: {
-          allowIntersection: false,
-          shapeOptions: { color: '#ea4335', fillColor: '#ea4335', fillOpacity: 0.4 }
-        },
-        rectangle: {
-          shapeOptions: { color: '#ea4335', fillColor: '#ea4335', fillOpacity: 0.4 }
-        }
-      },
-      edit: {
-        featureGroup: drawnItems,
-        remove: true // ごみ箱アイコンで削除可能
+    const toggleBtn = document.getElementById('toggle-draw');
+    const clearBtn = document.getElementById('clear-map');
+
+    // 描画モードの切り替え
+    toggleBtn.addEventListener('click', () => {
+      isDrawing = !isDrawing;
+      if (isDrawing) {
+        toggleBtn.innerText = '🔴 タップで範囲を指定中...';
+        toggleBtn.classList.add('active');
+      } else {
+        toggleBtn.innerText = '📍 範囲を描く (OFF)';
+        toggleBtn.classList.remove('active');
       }
     });
-    map.addControl(drawControl);
 
-    // 描画が完了した時の処理
-    map.on(L.Draw.Event.CREATED, function (e) {
-      const layer = e.layer;
-      drawnItems.addLayer(layer);
+    // 地図タップ時の処理
+    map.on('click', (e) => {
+      if (!isDrawing) return;
+
+      const latlng = e.latlng;
+      clickPoints.push([latlng.lat, latlng.lng]);
+
+      // 点のマーカーを追加
+      const marker = L.circleMarker(latlng, { radius: 5, color: '#dc3545', fillColor: '#dc3545', fillOpacity: 1 }).addTo(map);
+      markers.push(marker);
+
+      // 2点以上で塗りつぶしエリアを描画
+      if (clickPoints.length >= 2) {
+        if (currentPolygon) map.removeLayer(currentPolygon);
+        currentPolygon = L.polygon(clickPoints, { color: '#0d6efd', fillColor: '#0d6efd', fillOpacity: 0.4 }).addTo(map);
+      }
     });
 
-    // 3. Gmail送信処理
+    // クリアボタン処理
+    clearBtn.addEventListener('click', resetMapData);
+
+    function resetMapData() {
+      clickPoints = [];
+      if (currentPolygon) map.removeLayer(currentPolygon);
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+      currentPolygon = null;
+      if (isDrawing) toggleBtn.click();
+    }
+
+    // 3. 標準メールアプリ呼び出し処理
     document.getElementById('report-form').addEventListener('submit', function(e) {
       e.preventDefault();
 
-      if (drawnItems.getLayers().length === 0) {
-        alert('地図上にポスティング範囲を描画してください。');
+      if (clickPoints.length < 3) {
+        alert('地図上を3箇所以上タップして、ポスティング範囲を囲んでください。');
         return;
       }
 
@@ -109,7 +130,7 @@
       const date = document.getElementById('report-date').value;
       const count = document.getElementById('sheet-count').value;
 
-      // ★★★ あなたのGmailアドレスを入力してください ★★★
+      // ★★★ 受信したいご自身のメールアドレスに書き換えてください ★★★
       const mailTo = 'daibe75@gmail.com';
 
       const subject = encodeURIComponent(`【ポスティング報告】${date} ${name}様`);
@@ -119,19 +140,19 @@
         `■ 担当者名: ${name}\n` +
         `■ 実施日付: ${date}\n` +
         `■ 配布枚数: ${count}枚\n` +
-        `■ 実施エリア: 奈良市内（描画完了）\n` +
+        `■ 実施エリア: 奈良市内（${clickPoints.length}箇所を囲んで指定完了）\n` +
         `--------------------`
       );
 
-      const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${mailTo}&su=${subject}&body=${body}`;
-      window.open(gmailUrl, '_blank');
+      // スマホの規定メールアプリを起動
+      window.location.href = `mailto:${mailTo}?subject=${subject}&body=${body}`;
 
       // 画面のリセット
       setTimeout(() => {
-        if (confirm('Gmail画面を開きました。アプリの入力欄と地図上の範囲をリセットしますか？')) {
+        if (confirm('メールアプリを起動しました。入力欄と地図上の範囲をクリアしますか？')) {
           document.getElementById('report-form').reset();
           document.getElementById('report-date').valueAsDate = new Date();
-          drawnItems.clearLayers(); // 描画したエリアを消去
+          resetMapData();
         }
       }, 1000);
     });
